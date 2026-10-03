@@ -1,0 +1,471 @@
+{
+  "name": "Creator Outreach List (InsightSocial)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "f72e9863-832f-54e0-b9d3-691fd825637e",
+      "name": "Run now",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "0524b8c2-7838-5eb7-9a47-3f18e05365ea",
+              "name": "keywords",
+              "value": "meal prep, high protein recipes, healthy breakfast",
+              "type": "string"
+            },
+            {
+              "id": "79cb4fcb-4b48-52ec-8e17-d3ebb1cf3023",
+              "name": "date_posted",
+              "value": "last-month",
+              "type": "string"
+            },
+            {
+              "id": "9774cec6-c4d3-5985-be34-9c6ac1a0bb06",
+              "name": "min_followers",
+              "value": 10000,
+              "type": "number"
+            },
+            {
+              "id": "4e4085c3-0017-5594-98ba-fd7161c4e69a",
+              "name": "max_followers",
+              "value": 1000000,
+              "type": "number"
+            },
+            {
+              "id": "e76f44e0-3e7e-5673-9065-cf44e4c06b5d",
+              "name": "countries",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "1bb98cfb-4f2f-553b-990c-1c6114938b4f",
+              "name": "only_with_email",
+              "value": true,
+              "type": "boolean"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2bd9918b-8d13-5957-a58e-e0325a07d0d8",
+      "name": "Your search",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// One search per keyword. Each costs 340 to 420 credits (see the README).\nconst cfg = $input.first().json;\nreturn String(cfg.keywords || '')\n  .split(',')\n  .map(k => k.trim())\n  .filter(Boolean)\n  .map(keyword => ({ json: { keyword, date_posted: cfg.date_posted } }));"
+      },
+      "id": "ad4f4138-8813-5a59-b303-b26a3eb8317c",
+      "name": "One search per keyword",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.insightsocial.app/v1/instagram/search/reels",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "={{ $json.keyword }}"
+            },
+            {
+              "name": "date_posted",
+              "value": "={{ $json.date_posted }}"
+            },
+            {
+              "name": "include",
+              "value": "creator"
+            },
+            {
+              "name": "relevance",
+              "value": "filter"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-insightsocial-client",
+              "value": "n8n-creator-outreach-list/1.0.0"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "83b39a8b-e23f-5cbb-aa3c-c80b4b271fe1",
+      "name": "Instagram: Reels + creator cards",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "InsightSocial API"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Turns every keyword's Reels into one row per creator. Costs nothing.\nconst cfg = $('Your search').first().json;\nconst asked = $('One search per keyword').all().map(i => i.json.keyword);\n\nconst WEBMAIL = /@(gmail|googlemail|hotmail|outlook|live|yahoo|icloud|me|aol|proton|protonmail|gmx|yandex|mail)\\./i;\nconst MANAGER = /@[^@]*(talent|mgmt|management|agency|collective|marketing|entertainment)[^@]*$/i;\n\n// Cuts by character, not UTF-16 unit, so an emoji is never split in half.\nconst cut = (s, n) => Array.from(s).slice(0, n).join('');\n\nfunction emailType(email) {\n  if (!email) return '';\n  if (WEBMAIL.test(email)) return 'personal inbox';\n  if (MANAGER.test(email)) return 'manager or agency';\n  return 'own domain';\n}\n\nconst min = Number(cfg.min_followers) || 0;\nconst max = Number(cfg.max_followers) || Infinity;\nconst countries = String(cfg.countries || '').split(',').map(c => c.trim().toLowerCase()).filter(Boolean);\n\nconst creators = new Map();\nlet credits = 0, reels = 0, searched = 0;\n$input.all().forEach((item, i) => {\n  const res = item.json || {};\n  if (!res.data) return;\n  searched++;\n  credits += res.credits_used || 0;\n  for (const row of res.data.items || []) {\n    reels++;\n    const p = row.post || {};\n    const x = p.ext || {};\n    const handle = p.author && p.author.username;\n    if (!handle) continue;\n    const likes = p.engagement && p.engagement.likes;\n    const seen = creators.get(handle);\n    if (seen) {\n      if (!seen.keywords.includes(asked[i])) seen.keywords.push(asked[i]);\n      if ((likes || 0) > (seen.reel_likes || 0)) Object.assign(seen, { reel_url: p.url, reel_likes: likes, reel_posted: p.published_at });\n      continue;\n    }\n    creators.set(handle, {\n      handle,\n      name: (p.author && p.author.display_name) || '',\n      profile_url: 'https://www.instagram.com/' + handle + '/',\n      followers: x.author_followers == null ? null : Number(x.author_followers),\n      country: x.author_country || '',\n      email: x.author_public_email || '',\n      email_type: emailType(x.author_public_email),\n      phone: x.author_public_phone || '',\n      posts: x.author_posts_count == null ? null : Number(x.author_posts_count),\n      keywords: [asked[i]],\n      reel_url: p.url || '',\n      reel_likes: likes == null ? null : Number(likes),\n      reel_posted: p.published_at || '',\n      reel_caption: cut(((p.content && p.content.text) || '').replace(/\\s+/g, ' ').trim(), 200),\n    });\n  }\n});\n\nconst rows = [...creators.values()]\n  .filter(c => c.followers == null || (c.followers >= min && c.followers <= max))\n  .filter(c => !countries.length || !c.country || countries.includes(c.country.toLowerCase()))\n  .filter(c => !cfg.only_with_email || c.email)\n  .sort((a, b) => (b.email ? 1 : 0) - (a.email ? 1 : 0) || (b.followers || 0) - (a.followers || 0))\n  .map(c => ({ ...c, keywords: c.keywords.join(', '), found_on: $now.toISODate() }));\n\nconsole.log(`Searched ${searched} keywords, read ${reels} Reels, ${creators.size} creators, kept ${rows.length}, ${credits} credits.`);\nreturn rows.map(json => ({ json }));"
+      },
+      "id": "d3f02b9e-bc7a-5861-8e71-4dba3fe23998",
+      "name": "Build the list",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "mode": "url",
+          "value": ""
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Sheet1"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "handle": "={{ $json.handle }}",
+            "name": "={{ $json.name }}",
+            "profile_url": "={{ $json.profile_url }}",
+            "followers": "={{ $json.followers }}",
+            "country": "={{ $json.country }}",
+            "email": "={{ $json.email }}",
+            "email_type": "={{ $json.email_type }}",
+            "phone": "={{ $json.phone }}",
+            "posts": "={{ $json.posts }}",
+            "keywords": "={{ $json.keywords }}",
+            "reel_url": "={{ $json.reel_url }}",
+            "reel_likes": "={{ $json.reel_likes }}",
+            "reel_posted": "={{ $json.reel_posted }}",
+            "reel_caption": "={{ $json.reel_caption }}",
+            "found_on": "={{ $json.found_on }}"
+          },
+          "matchingColumns": [
+            "handle"
+          ],
+          "schema": [
+            {
+              "id": "handle",
+              "displayName": "handle",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "profile_url",
+              "displayName": "profile_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "followers",
+              "displayName": "followers",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "country",
+              "displayName": "country",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email_type",
+              "displayName": "email_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "posts",
+              "displayName": "posts",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "keywords",
+              "displayName": "keywords",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reel_url",
+              "displayName": "reel_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reel_likes",
+              "displayName": "reel_likes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reel_posted",
+              "displayName": "reel_posted",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reel_caption",
+              "displayName": "reel_caption",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "found_on",
+              "displayName": "found_on",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a8e9935e-5d78-5fda-b69c-5b24d3f0ab6f",
+      "name": "Save to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1220,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "fileName": "=creators-{{ $now.toISODate() }}.csv"
+        }
+      },
+      "id": "8f1b7748-ab07-55f6-8901-ad7ddd3ab6c4",
+      "name": "Download as CSV",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        1220,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 1. Your search\n**Edit `Your search`, then Run now.**\n\n- `keywords`: comma-separated phrases your creators post about\n- `date_posted`: last-week, last-month or last-year\n- `min_followers` / `max_followers`: the size you can afford\n- `countries`: e.g. `United States, United Kingdom` (blank = any)\n- `only_with_email`: drop creators with no public email",
+        "height": 660,
+        "width": 500,
+        "color": 7
+      },
+      "id": "037d4cae-5d1f-59c2-b04d-475104d8776f",
+      "name": "Note: setup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 2. Who is posting about it now\n**One InsightSocial key.** For each keyword: the matching Reels, off-topic ones removed, and each creator's card from their profile: followers, country and the public email and phone they list for contact.\n\nAbout 340 to 420 credits per keyword. A failed search costs nothing and does not stop the run.",
+        "height": 660,
+        "width": 460,
+        "color": 5
+      },
+      "id": "9302dab9-c18c-52e5-a6ef-ecb776ff065c",
+      "name": "Note: search",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        460,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 3. One row per creator\nDeduped across keywords, filtered to your size and countries, and every email labelled: personal inbox, own domain, or manager or agency.\n\nSaved to Google Sheets (updates by handle, so re-runs do not duplicate) and as a CSV in the execution.",
+        "height": 660,
+        "width": 560,
+        "color": 3
+      },
+      "id": "746756fd-4573-5551-a55d-875a92f81218",
+      "name": "Note: list",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        940,
+        -100
+      ]
+    }
+  ],
+  "connections": {
+    "Run now": {
+      "main": [
+        [
+          {
+            "node": "Your search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Your search": {
+      "main": [
+        [
+          {
+            "node": "One search per keyword",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "One search per keyword": {
+      "main": [
+        [
+          {
+            "node": "Instagram: Reels + creator cards",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Instagram: Reels + creator cards": {
+      "main": [
+        [
+          {
+            "node": "Build the list",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build the list": {
+      "main": [
+        [
+          {
+            "node": "Save to Google Sheets",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Download as CSV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}
