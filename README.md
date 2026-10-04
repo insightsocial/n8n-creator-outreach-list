@@ -43,11 +43,13 @@ against this workflow on the same 28 creators.
 
 1. **Your search.** The `Your search` node holds your keywords, how recent the Reels must be,
    a follower range, optional countries, and whether to keep only creators with an email.
-2. **Who is posting about it now.** For each keyword it makes one call: the matching Reels with
-   off-topic ones removed (a free relevance filter) and each creator's card. In our runs the
-   filter dropped 2 of 10 Reels for `ai automation` and 4 of 10 for `small business tips`.
-3. **One row per creator.** Creators are deduplicated across keywords and filtered by follower
-   range and country. Each email is labelled, and the creators with emails sort to the top.
+2. **Who is posting about it now.** For each keyword it makes one call: the matching Reels and
+   each creator's card.
+3. **One row per creator.** Reels whose caption doesn't mention every word of the keyword are
+   dropped (hashtags count, so `#mealprep` matches `meal prep`). This check runs inside n8n and
+   costs nothing; set `only_on_topic` to `false` to keep every Reel. Creators are then
+   deduplicated across keywords and filtered by follower range and country. Each email is
+   labelled, and the creators with emails sort to the top.
 4. **Save.** Rows go to Google Sheets, updating by handle so a re-run doesn't add duplicates.
    They are also saved as a CSV you can download from the execution.
 
@@ -89,6 +91,7 @@ per run. Pro (10,000 a month) covers about 25 keywords. Plans are at
 | `min_followers` / `max_followers` | 10000 / 1000000 | The creator size you can work with |
 | `countries` | United States, United Kingdom | The country the creator declares; blank keeps all |
 | `only_with_email` | true | Drops creators with no public email |
+| `only_on_topic` | true | Drops Reels whose caption doesn't mention the keyword |
 
 ## Use it responsibly
 
@@ -102,6 +105,8 @@ bulk mail. Write to each person about their own work, follow the anti-spam law w
   keywords rather than repeating one.
 - **Country is what the creator declares** on their profile. When a creator hasn't declared one,
   it's blank, and those creators are kept even when `countries` is set.
+- **`only_on_topic` matches words, not meaning.** A Reel about meal prep whose caption never
+  says "meal" and "prep" is dropped, and one that mentions them in passing is kept.
 - **`email_type` is a guess from the domain.** Agencies named like `talent`, `mgmt`,
   `management`, `agency`, `collective`, `marketing` or `entertainment` are caught. One that isn't
   (`@blanketlondon.com`) shows up as "own domain".

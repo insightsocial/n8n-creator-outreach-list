@@ -53,6 +53,12 @@
               "name": "only_with_email",
               "value": true,
               "type": "boolean"
+            },
+            {
+              "id": "5d0f7c3e-2a41-5b8e-9c1d-7e6f4a3b2c19",
+              "name": "only_on_topic",
+              "value": true,
+              "type": "boolean"
             }
           ]
         },
@@ -99,10 +105,6 @@
             {
               "name": "include",
               "value": "creator"
-            },
-            {
-              "name": "relevance",
-              "value": "filter"
             }
           ]
         },
@@ -111,7 +113,11 @@
           "parameters": [
             {
               "name": "x-insightsocial-client",
-              "value": "n8n-creator-outreach-list/1.0.0"
+              "value": "n8n-creator-outreach-list/1.1.0"
+            },
+            {
+              "name": "InsightSocial-Version",
+              "value": "2"
             }
           ]
         },
@@ -140,7 +146,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Turns every keyword's Reels into one row per creator. Costs nothing.\nconst cfg = $('Your search').first().json;\nconst asked = $('One search per keyword').all().map(i => i.json.keyword);\n\nconst WEBMAIL = /@(gmail|googlemail|hotmail|outlook|live|yahoo|icloud|me|aol|proton|protonmail|gmx|yandex|mail)\\./i;\nconst MANAGER = /@[^@]*(talent|mgmt|management|agency|collective|marketing|entertainment)[^@]*$/i;\n\n// Cuts by character, not UTF-16 unit, so an emoji is never split in half.\nconst cut = (s, n) => Array.from(s).slice(0, n).join('');\n\nfunction emailType(email) {\n  if (!email) return '';\n  if (WEBMAIL.test(email)) return 'personal inbox';\n  if (MANAGER.test(email)) return 'manager or agency';\n  return 'own domain';\n}\n\nconst min = Number(cfg.min_followers) || 0;\nconst max = Number(cfg.max_followers) || Infinity;\nconst countries = String(cfg.countries || '').split(',').map(c => c.trim().toLowerCase()).filter(Boolean);\n\nconst creators = new Map();\nlet credits = 0, reels = 0, searched = 0;\n$input.all().forEach((item, i) => {\n  const res = item.json || {};\n  if (!res.data) return;\n  searched++;\n  credits += res.credits_used || 0;\n  for (const row of res.data.items || []) {\n    reels++;\n    const p = row.post || {};\n    const x = p.ext || {};\n    const handle = p.author && p.author.username;\n    if (!handle) continue;\n    const likes = p.engagement && p.engagement.likes;\n    const seen = creators.get(handle);\n    if (seen) {\n      if (!seen.keywords.includes(asked[i])) seen.keywords.push(asked[i]);\n      if ((likes || 0) > (seen.reel_likes || 0)) Object.assign(seen, { reel_url: p.url, reel_likes: likes, reel_posted: p.published_at });\n      continue;\n    }\n    creators.set(handle, {\n      handle,\n      name: (p.author && p.author.display_name) || '',\n      profile_url: 'https://www.instagram.com/' + handle + '/',\n      followers: x.author_followers == null ? null : Number(x.author_followers),\n      country: x.author_country || '',\n      email: x.author_public_email || '',\n      email_type: emailType(x.author_public_email),\n      phone: x.author_public_phone || '',\n      posts: x.author_posts_count == null ? null : Number(x.author_posts_count),\n      keywords: [asked[i]],\n      reel_url: p.url || '',\n      reel_likes: likes == null ? null : Number(likes),\n      reel_posted: p.published_at || '',\n      reel_caption: cut(((p.content && p.content.text) || '').replace(/\\s+/g, ' ').trim(), 200),\n    });\n  }\n});\n\nconst rows = [...creators.values()]\n  .filter(c => c.followers == null || (c.followers >= min && c.followers <= max))\n  .filter(c => !countries.length || !c.country || countries.includes(c.country.toLowerCase()))\n  .filter(c => !cfg.only_with_email || c.email)\n  .sort((a, b) => (b.email ? 1 : 0) - (a.email ? 1 : 0) || (b.followers || 0) - (a.followers || 0))\n  .map(c => ({ ...c, keywords: c.keywords.join(', '), found_on: $now.toISODate() }));\n\nconsole.log(`Searched ${searched} keywords, read ${reels} Reels, ${creators.size} creators, kept ${rows.length}, ${credits} credits.`);\nreturn rows.map(json => ({ json }));"
+        "jsCode": "// Turns every keyword's Reels into one row per creator. Costs nothing.\nconst cfg = $('Your search').first().json;\nconst asked = $('One search per keyword').all().map(i => i.json.keyword);\n\nconst WEBMAIL = /@(gmail|googlemail|hotmail|outlook|live|yahoo|icloud|me|aol|proton|protonmail|gmx|yandex|mail)\\./i;\nconst MANAGER = /@[^@]*(talent|mgmt|management|agency|collective|marketing|entertainment)[^@]*$/i;\n\n// On topic = the caption mentions every word of the keyword. Hashtags count:\n// \"#mealprep\" mentions both \"meal\" and \"prep\". Runs here, so it costs nothing.\nconst onTopic = (text, keyword) => {\n  const t = String(text || '').toLowerCase();\n  return String(keyword || '').toLowerCase().split(/\\s+/).filter(Boolean).every(w => t.includes(w));\n};\n\n// Cuts by character, not UTF-16 unit, so an emoji is never split in half.\nconst cut = (s, n) => Array.from(s).slice(0, n).join('');\n\nfunction emailType(email) {\n  if (!email) return '';\n  if (WEBMAIL.test(email)) return 'personal inbox';\n  if (MANAGER.test(email)) return 'manager or agency';\n  return 'own domain';\n}\n\nconst min = Number(cfg.min_followers) || 0;\nconst max = Number(cfg.max_followers) || Infinity;\nconst countries = String(cfg.countries || '').split(',').map(c => c.trim().toLowerCase()).filter(Boolean);\n\nconst creators = new Map();\nlet credits = 0, reels = 0, searched = 0, offTopic = 0;\n$input.all().forEach((item, i) => {\n  const res = item.json || {};\n  if (!res.data) return;\n  searched++;\n  credits += res.credits_used || 0;\n  for (const row of res.data.items || []) {\n    reels++;\n    const p = row.post || {};\n    if (cfg.only_on_topic && !onTopic(p.content && p.content.text, asked[i])) { offTopic++; continue; }\n    const x = p.ext || {};\n    const handle = p.author && p.author.username;\n    if (!handle) continue;\n    const likes = p.engagement && p.engagement.likes;\n    const seen = creators.get(handle);\n    if (seen) {\n      if (!seen.keywords.includes(asked[i])) seen.keywords.push(asked[i]);\n      if ((likes || 0) > (seen.reel_likes || 0)) Object.assign(seen, { reel_url: p.url, reel_likes: likes, reel_posted: p.published_at });\n      continue;\n    }\n    creators.set(handle, {\n      handle,\n      name: (p.author && p.author.display_name) || '',\n      profile_url: 'https://www.instagram.com/' + handle + '/',\n      followers: x.author_followers == null ? null : Number(x.author_followers),\n      country: x.author_country || '',\n      email: x.author_public_email || '',\n      email_type: emailType(x.author_public_email),\n      phone: x.author_public_phone || '',\n      posts: x.author_posts_count == null ? null : Number(x.author_posts_count),\n      keywords: [asked[i]],\n      reel_url: p.url || '',\n      reel_likes: likes == null ? null : Number(likes),\n      reel_posted: p.published_at || '',\n      reel_caption: cut(((p.content && p.content.text) || '').replace(/\\s+/g, ' ').trim(), 200),\n    });\n  }\n});\n\nconst rows = [...creators.values()]\n  .filter(c => c.followers == null || (c.followers >= min && c.followers <= max))\n  .filter(c => !countries.length || !c.country || countries.includes(c.country.toLowerCase()))\n  .filter(c => !cfg.only_with_email || c.email)\n  .sort((a, b) => (b.email ? 1 : 0) - (a.email ? 1 : 0) || (b.followers || 0) - (a.followers || 0))\n  .map(c => ({ ...c, keywords: c.keywords.join(', '), found_on: $now.toISODate() }));\n\nconsole.log(`Searched ${searched} keywords, read ${reels} Reels (${offTopic} off topic), ${creators.size} creators, kept ${rows.length}, ${credits} credits.`);\nreturn rows.map(json => ({ json }));"
       },
       "id": "d3f02b9e-bc7a-5861-8e71-4dba3fe23998",
       "name": "Build the list",
@@ -352,7 +358,7 @@
     },
     {
       "parameters": {
-        "content": "## 1. Your search\n**Edit `Your search`, then Run now.**\n\n- `keywords`: comma-separated phrases your creators post about\n- `date_posted`: last-week, last-month or last-year\n- `min_followers` / `max_followers`: the size you can afford\n- `countries`: e.g. `United States, United Kingdom` (blank = any)\n- `only_with_email`: drop creators with no public email",
+        "content": "## 1. Your search\n**Edit `Your search`, then Run now.**\n\n- `keywords`: comma-separated phrases your creators post about\n- `date_posted`: last-week, last-month or last-year\n- `min_followers` / `max_followers`: the size you can afford\n- `countries`: e.g. `United States, United Kingdom` (blank = any)\n- `only_with_email`: drop creators with no public email\n- `only_on_topic`: drop Reels whose caption does not mention your keyword",
         "height": 660,
         "width": 500,
         "color": 7
@@ -368,7 +374,7 @@
     },
     {
       "parameters": {
-        "content": "## 2. Who is posting about it now\n**One InsightSocial key.** For each keyword: the matching Reels, off-topic ones removed, and each creator's card from their profile: followers, country and the public email and phone they list for contact.\n\nAbout 340 to 420 credits per keyword. A failed search costs nothing and does not stop the run.",
+        "content": "## 2. Who is posting about it now\n**One InsightSocial key.** For each keyword: the matching Reels and each creator's card from their profile: followers, country and the public email and phone they list for contact.\n\nAbout 340 to 420 credits per keyword. A failed search costs nothing and does not stop the run.",
         "height": 660,
         "width": 460,
         "color": 5
@@ -384,7 +390,7 @@
     },
     {
       "parameters": {
-        "content": "## 3. One row per creator\nDeduped across keywords, filtered to your size and countries, and every email labelled: personal inbox, own domain, or manager or agency.\n\nSaved to Google Sheets (updates by handle, so re-runs do not duplicate) and as a CSV in the execution.",
+        "content": "## 3. One row per creator\nOff-topic Reels dropped, creators deduped across keywords and filtered to your size and countries, and every email labelled: personal inbox, own domain, or manager or agency.\n\nSaved to Google Sheets (updates by handle, so re-runs do not duplicate) and as a CSV in the execution.",
         "height": 660,
         "width": 560,
         "color": 3
