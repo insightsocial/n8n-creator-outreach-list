@@ -6,8 +6,8 @@ and the **business email and phone they list for contact**. The rows go into Goo
 CSV file.
 
 On a real run with three keywords, it found 28 creators. 23 of them list a contact email, and 16
-of those were in the follower range we asked for. The run cost **1,180 credits**, which works out to
-**74 credits per usable creator**.
+of those were in the follower range we asked for. At today's prices the run costs **590 credits**, which works out to
+**37 credits per usable creator**.
 
 ![The workflow in n8n](assets/canvas.png)
 
@@ -55,18 +55,19 @@ against this workflow on the same 28 creators.
 
 ## Cost
 
-One call per keyword to `/v1/instagram/search/reels` with `include=creator`. That is 20 credits
-for the search plus about 35 to 40 for each creator card. Failed calls cost nothing.
+One call per keyword to `/v1/instagram/search/reels` with `include=creator`. That is 10 credits
+for the search plus about 17 to 20 for each creator card. Failed calls cost nothing.
 
 | Run | Credits | Creators | With email | Kept |
 |---|---|---|---|---|
-| `meal prep, high protein recipes, healthy breakfast` | 1,180 (420 + 340 + 420) | 28 | 23 | 16 |
-| `pilates at home, gut health, small business tips` | 680 (one search failed, free) | 13 | 10 | 9 |
+| `meal prep, high protein recipes, healthy breakfast` | 590 (210 + 170 + 210) | 28 | 23 | 16 |
+| `pilates at home, gut health, small business tips` | 340 (one search failed, free) | 13 | 10 | 9 |
 
-Kept means 10,000 to 1,000,000 followers with an email. Both runs used `last-month`.
+Kept means 10,000 to 1,000,000 followers with an email. Both runs used `last-month`. Credits are
+at the prices since 2026-10-05; the runs were measured at the earlier, doubled prices.
 
-Budget **340 to 420 credits per keyword**. The free plan (500 credits a month) covers one keyword
-per run. Pro (10,000 a month) covers about 25 keywords. Plans are at
+Budget **170 to 210 credits per keyword**. The free plan (500 credits a month) covers two keywords
+per run. Pro (10,000 a month) covers about 50 keywords. Plans are at
 [insightsocial.app/pricing](https://www.insightsocial.app/pricing).
 
 ## Setup

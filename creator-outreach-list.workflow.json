@@ -75,7 +75,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// One search per keyword. Each costs 340 to 420 credits (see the README).\nconst cfg = $input.first().json;\nreturn String(cfg.keywords || '')\n  .split(',')\n  .map(k => k.trim())\n  .filter(Boolean)\n  .map(keyword => ({ json: { keyword, date_posted: cfg.date_posted } }));"
+        "jsCode": "// One search per keyword. Each costs 170 to 210 credits (see the README).\nconst cfg = $input.first().json;\nreturn String(cfg.keywords || '')\n  .split(',')\n  .map(k => k.trim())\n  .filter(Boolean)\n  .map(keyword => ({ json: { keyword, date_posted: cfg.date_posted } }));"
       },
       "id": "ad4f4138-8813-5a59-b303-b26a3eb8317c",
       "name": "One search per keyword",
@@ -374,7 +374,7 @@
     },
     {
       "parameters": {
-        "content": "## 2. Who is posting about it now\n**One InsightSocial key.** For each keyword: the matching Reels and each creator's card from their profile: followers, country and the public email and phone they list for contact.\n\nAbout 340 to 420 credits per keyword. A failed search costs nothing and does not stop the run.",
+        "content": "## 2. Who is posting about it now\n**One InsightSocial key.** For each keyword: the matching Reels and each creator's card from their profile: followers, country and the public email and phone they list for contact.\n\nAbout 170 to 210 credits per keyword. A failed search costs nothing and does not stop the run.",
         "height": 660,
         "width": 460,
         "color": 5
